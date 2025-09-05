@@ -36,6 +36,6 @@ I’m an active member of the cybersecurity community, recognized for impactful 
 ---
 
 📬 Reach me at 
-    [Email](mailto:iamvikramsharma1337@gmail.com) | [LinkedIn](https://in.linkedin.com/in/v1kramsharma) | [Medium](http://vikram1337.medium.com/)
+    [Email](mailto:iamvikramsharma1337@gmail.com) | [LinkedIn](https://in.linkedin.com/in/v1kramsharma) | [Medium](https://vikram1337.medium.com/)
 
 [Download my resume](../assets/resume.pdf){:target="_blank" download} 
